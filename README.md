@@ -37,7 +37,7 @@ usage: virustotal.py [-h] file
 
 ### Scanning a file
 
-You scan a file by providing the file path to it. Example:
+You scan a file by providing the file path to it.
 
 ```code
 virustotal.py ~/home/scan_me.exe

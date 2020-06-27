@@ -18,7 +18,9 @@ def hash_it(file, algorithm):
     '''
     Returns hash of the file provided
 
-    Valid algorithms: sha1 | sha256 | md5
+    :param file: file to hash (type: str/pathlib obj) :param algorithm: algorithm to
+    to use for hashing (valid algorithms: sha1 | sha256 | md5) (type: str)
+    :return: file hash (type: str)
     '''
     if algorithm == "sha256":
         hasher = hashlib.sha256()
@@ -40,9 +42,10 @@ def vt_get_data(f_hash):
     The function gets the data against the file hash provided
     from the virustotal api
 
-    parameters: f_hash:
-
+    :param f_hash: sha256 of the file to scan with virustotal
+    :return: requests.models.Response
     '''
+    print("GETTING DATA")
     url = f"https://www.virustotal.com/api/v3/files/{f_hash}"
     while True:
         response = requests.get(url, headers=HEADERS)
@@ -57,8 +60,8 @@ def vt_post_files(file, url="https://www.virustotal.com/api/v3/files"):
     for analysis and returns the response from the
     virustotal api
 
-    parameters: file:file to upload for analysis | url:url to upload
-    file to (for files larger than 32MB)
+    :param file: file to upload for analysis :param url: url to upload
+    file to (use for files larger than 32MB) :return: requests.models.Response
     '''
     with open(file, "rb") as f:
         file_bin = f.read()
@@ -76,11 +79,12 @@ def vt_get_analyses(response):
     The function returns the file hash of the uploaded file
     once the analysis of the uploaded file is available
 
-    parameters: response:request module return object
+    :param response: requests.models.Response
+    :return: sha256 of the previously uploaded file (type: str)
     '''
     _id = response.json().get("data").get("id")
     url = f"https://www.virustotal.com/api/v3/analyses/{_id}"
-    print(_id)
+    print(f"ID: {_id}")
     while True:
         print("WAITING FOR ANALYSIS REPORT")
         sleep(60)
@@ -95,7 +99,7 @@ def vt_get_analyses(response):
 
 def vt_get_upload_url():
     '''
-    The function returns a url to upload files larfer than 32MB
+    The function returns a url to upload files larger than 32MB
     to the virustotal api
     '''
     url = "https://www.virustotal.com/api/v3/files/upload_url"
@@ -111,7 +115,8 @@ def error_handle(response):
     The function returns True if there are no errors
     and returns False otherwise
 
-    parameters: response:request module return object
+    :param response: requests.models.Response
+    :return: bool
     '''
     if response.status_code == 429:
         print("WAITING")
@@ -130,7 +135,8 @@ def parse_response(response):
     The function extracts useful information from the respose JSON file
     and return it in JSON format.
 
-    parameters: response:request module return object
+    :param response: requests.models.Response
+    :return: parsed data as json/dict
     '''
     json_obj = response.json().get("data").get("attributes")
 
@@ -155,11 +161,28 @@ def parse_response(response):
     return output
 
 
+def bar(parsed_response):
+    '''
+    The function returns a bar to visually represent the engine
+    detection.
+
+    :param parsed_response: parsed dict/json from parse_response() function
+    :return: bar (type: str)
+    '''
+    total = 72
+    undetected = parsed_response.get("stats").get("undetected")
+    data = f"{'@'*undetected}{' '*(total-undetected)}"
+    bar = bar = f"+{'-'*total}+\n|{data}| {undetected}/{total} did not detect\n+{'-'*total}+"
+    return bar
+
+######################################SCRIPT######################################
+
+
 parser = argparse.ArgumentParser(description="scan your files with virustotal")
 parser.add_argument("file", action="store", nargs=1, help="file to scan")
 
 parsed_arg = parser.parse_args()
-print(parsed_arg)
+# print(parsed_arg)
 
 for f in parsed_arg.file:
 
@@ -168,28 +191,36 @@ for f in parsed_arg.file:
     if not file.exists():
         raise Exception("File not found")
 
+    # calculate file hash
     f_hash = hash_it(file, "sha256")
 
+    # get file data against the file hash
     response = vt_get_data(f_hash)
 
-    print(response)
-
+    # if data for a specific file is not available
+    # upload that file to virustotal
     if response.status_code == 404:
 
         # The response of vt_post_files can only be parsed by vt_get_analysis.
-        # vt_post... and vt_get_ana... should be made into a single function
-        # but i left it this in case there is a need to call vt_get_analysis
+        # vt_post_files and vt_get_analyses should be made into a single function
+        # but i left the separate in case there is a need to call vt_get_analysis
         # seperatley
+
         if file.stat().st_size > 32000000:
+            # for files larger than 32MB
             response = vt_get_data(vt_get_analyses(
                 vt_post_files(file, vt_get_upload_url())))
         else:
+            # for small files
             response = vt_get_data(vt_get_analyses(vt_post_files(file)))
 
-    print(response)
-
     if response.status_code == 200:
-        pprint(parse_response(response), indent=2)
+        # parse and print response
+        parsed_response = parse_response(response)
+
+        pprint(parsed_response, indent=2)
+        print()
+        print(bar(parsed_response))
     else:
         raise Exception(response.status_code)
 
@@ -199,3 +230,12 @@ for f in parsed_arg.file:
 # 409 = resource already exists
 # 429 = quota exceeded; wait 60 sec
 # 200 = OK
+
+# NOTE: The response variable is the response object of the requests module.
+#       run print(type(response)) to double check the type of the variable.
+# NOTE: Error handling is done with error_handle() function. The error handling
+#       is build into all of the function (all function use error_handle() to
+#       handle errors).
+
+# * add better response printing
+# * add support for scanning multiple file
